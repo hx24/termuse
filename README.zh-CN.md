@@ -22,17 +22,27 @@ Termuse 为 macOS/zsh 提供快捷的 AI 问答命令。它刻意保持轻量：
 OpenCode 是唯一核心外部依赖。Termuse 不直接调用模型 API、不保存 API Key、
 不实现 Provider，也不修改 OpenCode 的默认模型。
 
-OpenCode 一旦写出内容，Termuse 就会立即转发到终端，同时保留一份安全的临时
-副本，用于更新内存历史和检查第一个 shell 代码块。当前版本的 OpenCode 输出
-完整 text part 而不是 token delta，因此逐 token 流式输出仍依赖未来的 OpenCode
-CLI 支持，或未来基于 Server/SDK 的 Termuse 模式。
+Termuse 会临时启动一个仅监听 `127.0.0.1` 的 OpenCode Server，消费 SSE 中的
+`message.part.delta` 事件，并在每个文本增量到达时立即渲染。请求结束后 Server
+会自动关闭。Termuse 只会短暂保留一份安全副本，用于更新内存历史和检查第一个
+shell 代码块。该实现使用 macOS 自带的 `curl`，不需要安装额外软件或运行常驻服务。
 
 Termuse 会为每次请求静默注入一个临时、专用的 OpenCode Agent。用户不需要执行
 额外配置，它也不会改变 OpenCode TUI 使用的 Agent 或默认设置。
 
 ## 安装
 
+从 GitHub 快速安装：
+
 ```zsh
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/hx24/termuse/main/install.sh | zsh && source ~/.zshrc
+```
+
+也可以先克隆仓库、检查脚本内容，再进行安装：
+
+```zsh
+git clone https://github.com/hx24/termuse.git
+cd termuse
 chmod +x install.sh uninstall.sh
 ./install.sh
 source ~/.zshrc
@@ -41,7 +51,8 @@ source ~/.zshrc
 安装器会把 `termuse.zsh` 复制到 `~/.termuse/`，并在 `~/.zshrc` 中加入一个
 带标记的 source 区块。重复安装只会更新文件，不会重复添加 source 行。安装器
 还会把重复、无标记或旧版格式错误的 Termuse 配置规范化为唯一的三行区块，
-同时保留其他 zsh 配置。
+同时保留其他 zsh 配置。远程安装命令通过 HTTPS 下载同一份 `termuse.zsh`，
+不需要额外配置。
 
 ## 使用方法
 
@@ -106,9 +117,24 @@ termuse model reset
 
 ## 终端 Markdown 展示
 
-Termuse 内置了一个无依赖的轻量 Markdown 终端渲染器，可优化标题、列表、引用、
-分隔线和 fenced code block 的显示。输出被管道或重定向时会保留原始 Markdown。
-设置 `NO_COLOR` 后会禁用 ANSI 颜色，但仍保留更清晰的终端布局。
+Termuse 内置了一个无依赖、支持增量输出的终端 Markdown 渲染器，可以识别：
+
+- H1 到 H6 多级标题；
+- 嵌套的无序列表、有序列表和任务列表；
+- 粗体、斜体、删除线、行内代码、链接、图片和自动链接；
+- 多级引用、表格、分隔线和 fenced code block；
+- `markdown` 与 `md` 围栏，其内部会继续按 Markdown 渲染，而不是显示原始源码。
+
+默认启用 256 色主题。可以在加载 Termuse 前通过 `TERMUSE_COLOR` 调整：
+
+```zsh
+export TERMUSE_COLOR=always  # 默认，始终启用颜色
+export TERMUSE_COLOR=auto    # 遵循 NO_COLOR 和终端能力
+export TERMUSE_COLOR=never   # 保留排版，但关闭 ANSI 颜色
+```
+
+输出被管道或重定向时会保留不含 ANSI 控制符的原始 Markdown。渲染过程保持增量，
+不会等待完整回答后再统一展示。
 
 ## 键盘选择
 
@@ -125,7 +151,9 @@ Termuse 内置了一个无依赖的轻量 Markdown 终端渲染器，可优化�
 
 Termuse 只提取第一个标记为 `bash`、`sh`、`shell` 或 `zsh` 的 fenced code
 block。它会完整显示命令并打开 `No` / `Yes` 方向键菜单，默认选择 `No`。
-典型危险命令还需要通过第二个确认菜单，该菜单默认选择 `Cancel`。
+命令会显示在独立的“Suggested command”区域中，命令上下各空一行，并以 `>` 开头，
+与上方回答清晰分开，不再使用额外边框文案。典型危险命令还需要通过第二个确认菜单，
+默认选择 `Cancel`。
 
 用户确认后的命令会由当前 zsh source，因此 `cd` 和 `export` 等命令可以影响
 当前 shell。

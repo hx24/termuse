@@ -22,11 +22,12 @@ Termuse exists for questions that are faster to ask without leaving the terminal
 
 OpenCode is the only core external dependency. Termuse does not call model APIs,
 store API keys, implement providers, or change OpenCode's default model.
-Responses are forwarded as soon as `opencode run` writes them; a secure temporary
+Termuse starts a temporary OpenCode Server bound only to `127.0.0.1`, consumes
+its SSE `message.part.delta` events, and renders each text chunk as it arrives.
+The server is stopped automatically when the request finishes. A secure temporary
 copy is kept only until Termuse has updated the in-memory history and inspected
-the first shell block. Current OpenCode releases emit completed text parts rather
-than token deltas, so token-level streaming will require upstream CLI support or
-a future Server/SDK-based Termuse mode.
+the first shell block. This uses the `curl` included with macOS and requires no
+additional package or persistent service.
 
 Termuse silently injects a temporary, dedicated OpenCode agent for each request.
 It requires no additional user configuration and does not change the agents or
@@ -34,7 +35,17 @@ defaults used by the OpenCode TUI.
 
 ## Install
 
+Quick install from GitHub:
+
 ```zsh
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/hx24/termuse/main/install.sh | zsh && source ~/.zshrc
+```
+
+Alternatively, clone the repository and inspect the scripts before installing:
+
+```zsh
+git clone https://github.com/hx24/termuse.git
+cd termuse
 chmod +x install.sh uninstall.sh
 ./install.sh
 source ~/.zshrc
@@ -44,7 +55,8 @@ The installer copies `termuse.zsh` to `~/.termuse/` and adds one marked source
 block to `~/.zshrc`. Running it again updates the installed file without adding a
 second source line. It also normalizes duplicate, unmarked, or legacy malformed
 Termuse entries into one valid three-line block while preserving unrelated zsh
-configuration.
+configuration. The remote command downloads the same `termuse.zsh` file over
+HTTPS and requires no additional configuration.
 
 ## Use
 
@@ -110,10 +122,26 @@ OpenCode uses its own default.
 
 ## Terminal Markdown
 
-Termuse includes a small, dependency-free terminal renderer for common Markdown:
-headings, lists, quotes, separators, and fenced code blocks. When output is piped
-or redirected, the original Markdown is preserved. `NO_COLOR` disables ANSI
-colors while keeping the clearer terminal layout.
+Termuse includes a dependency-free, incremental terminal renderer for:
+
+- headings from H1 through H6;
+- nested unordered and ordered lists, plus task lists;
+- bold, italic, strikethrough, inline code, links, images, and autolinks;
+- nested quotes, tables, separators, and fenced code blocks;
+- `markdown` and `md` fences, whose contents are rendered as Markdown instead
+  of being shown as raw source.
+
+A 256-color theme is enabled by default. Set `TERMUSE_COLOR` before loading
+Termuse to control it:
+
+```zsh
+export TERMUSE_COLOR=always  # default
+export TERMUSE_COLOR=auto    # respect NO_COLOR and terminal capabilities
+export TERMUSE_COLOR=never   # keep formatting, disable ANSI colors
+```
+
+When output is piped or redirected, the original Markdown is preserved without
+ANSI codes. Rendering stays incremental and does not delay the SSE stream.
 
 ## Keyboard navigation
 
@@ -131,9 +159,12 @@ and removal of saved configuration during uninstall.
 
 Termuse extracts only the first fenced block labeled `bash`, `sh`, `shell`, or
 `zsh`. It prints the complete block and opens a `No` / `Yes` arrow-key menu with
-`No` selected by default. Typical destructive commands require a second menu,
-which defaults to `Cancel`. Confirmed commands are sourced by the current zsh, so
-commands such as `cd` and `export` can affect it.
+`No` selected by default. The command is displayed in a separate “Suggested
+command” section. The command block is separated from the surrounding answer by
+blank lines, and each command line starts with `>` for quick recognition. Typical
+destructive commands require a second menu, which defaults to `Cancel`.
+Confirmed commands are sourced by the current zsh, so commands such as `cd` and
+`export` can affect it.
 
 OpenCode is invoked through a temporary `termuse` agent with a dedicated Q&A
 prompt, global and agent-level deny-all permissions, and `--agent termuse`.
